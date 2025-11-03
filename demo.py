@@ -2,7 +2,7 @@
 import open3d as o3d
 import numpy as np
 from open3d import core as o3c
-import open3d.t.pipelines.registration as treg
+# import open3d.t.pipelines.registration as treg
 
 
 def downsample_pcd(in_path, out_path, voxel_size=0.02):
@@ -73,38 +73,38 @@ def refine_icp(src, tgt, init_trans, voxel_size):
         o3d.pipelines.registration.TransformationEstimationPointToPlane())
     return result
 
-def refine_icp_gpu(src, tgt, init_trans, voxel_size):
-    """
-    使用 Open3D 的 Tensor API 在 GPU 上执行 ICP。
-    """
-    # 检查是否有可用的 CUDA 设备
-    if not o3d.core.cuda.is_available():
-        raise RuntimeError("CUDA is not available. Please check your Open3D installation and CUDA setup.")
+# def refine_icp_gpu(src, tgt, init_trans, voxel_size):
+#     """
+#     使用 Open3D 的 Tensor API 在 GPU 上执行 ICP。
+#     """
+#     # 检查是否有可用的 CUDA 设备
+#     if not o3d.core.cuda.is_available():
+#         raise RuntimeError("CUDA is not available. Please check your Open3D installation and CUDA setup.")
 
-    device = o3c.Device("CUDA:0")
+#     device = o3c.Device("CUDA:0")
     
-    # 将初始变换矩阵转换为 GPU 上的张量
-    init_trans_tensor = o3c.Tensor(init_trans, device=device)
-     # 将 open3d.geometry.PointCloud 转换为 open3d.t.geometry.PointCloud
-    # 并将其发送到 GPU
-    src_t = o3d.t.geometry.PointCloud.from_legacy(src, o3c.float64, device)
-    tgt_t = o3d.t.geometry.PointCloud.from_legacy(tgt, o3c.float64, device)
-    # 在 GPU 上估计法线
-    src_t.estimate_normals()
-    tgt_t.estimate_normals()
-    # 设置 ICP 的收敛标准
-    criteria = treg.ICPConvergenceCriteria(relative_fitness=1e-6, relative_rmse=1e-6, max_iteration=30)
-    # 在 GPU 上运行 ICP
-    result = treg.icp(
-        src_t, 
-        tgt_t, 
-        voxel_size * 0.4,  # 对应 CPU 版本中的 distance_threshold
-        init_trans_tensor,
-        treg.TransformationEstimationPointToPlane(),
-        criteria
-    )
-    # 将结果从 GPU 张量转换回 NumPy 数组
-    return result.transformation.cpu().numpy(), result.fitness, result.inlier_rmse
+#     # 将初始变换矩阵转换为 GPU 上的张量
+#     init_trans_tensor = o3c.Tensor(init_trans, device=device)
+#      # 将 open3d.geometry.PointCloud 转换为 open3d.t.geometry.PointCloud
+#     # 并将其发送到 GPU
+#     src_t = o3d.t.geometry.PointCloud.from_legacy(src, o3c.float64, device)
+#     tgt_t = o3d.t.geometry.PointCloud.from_legacy(tgt, o3c.float64, device)
+#     # 在 GPU 上估计法线
+#     src_t.estimate_normals()
+#     tgt_t.estimate_normals()
+#     # 设置 ICP 的收敛标准
+#     criteria = treg.ICPConvergenceCriteria(relative_fitness=1e-6, relative_rmse=1e-6, max_iteration=30)
+#     # 在 GPU 上运行 ICP
+#     result = treg.icp(
+#         src_t, 
+#         tgt_t, 
+#         voxel_size * 0.4,  # 对应 CPU 版本中的 distance_threshold
+#         init_trans_tensor,
+#         treg.TransformationEstimationPointToPlane(),
+#         criteria
+#     )
+#     # 将结果从 GPU 张量转换回 NumPy 数组
+#     return result.transformation.cpu().numpy(), result.fitness, result.inlier_rmse
 
 
 def register_with_prior(src_path, tgt_path, voxel_size=0.02, crop_expand=1.5, do_global=True, skip_crop=False, prior_transform=None, use_gpu=False):
@@ -131,6 +131,7 @@ def register_with_prior(src_path, tgt_path, voxel_size=0.02, crop_expand=1.5, do
         print("running global registration (FPFH + RANSAC)...")
         glob = global_registration(src_down, tgt_down, src_fpfh, tgt_fpfh, voxel_size)
         init_trans = glob.transformation
+        print("global init_trans:\n", init_trans)
         print("global fitness:", glob.fitness, "inlier_rmse:", glob.inlier_rmse)
     else:
         print("using centroid alignment as init")
@@ -142,18 +143,18 @@ def register_with_prior(src_path, tgt_path, voxel_size=0.02, crop_expand=1.5, do
 
     # 精配准（ICP）
     if use_gpu:
-        print("refining with ICP on GPU...")
-        try:
-            T_icp, fitness, rmse = refine_icp_gpu(src, tgt_cropped, init_trans, voxel_size)
-            print("GPU ICP fitness:", fitness, "rmse:", rmse)
-            # 为了保持返回值结构一致，我们创建一个类似 legacy API 的结果对象
-            from collections import namedtuple
-            ICPResult = namedtuple('ICPResult', ['transformation', 'fitness', 'inlier_rmse'])
-            result_icp = ICPResult(transformation=T_icp, fitness=fitness, inlier_rmse=rmse)
-        except Exception as e:
-            print(f"GPU ICP failed: {e}. Falling back to CPU.")
-            result_icp = refine_icp(src, tgt_cropped, init_trans, voxel_size)
-            print("CPU ICP fitness:", result_icp.fitness, "rmse:", result_icp.inlier_rmse)
+        print("\nrefining with ICP on GPU... sorry ICP GPU 版暂时不可用，正在使用 CPU 版代替\n")
+        # try:
+        #     T_icp, fitness, rmse = refine_icp_gpu(src, tgt_cropped, init_trans, voxel_size)
+        #     print("GPU ICP fitness:", fitness, "rmse:", rmse)
+        #     # 为了保持返回值结构一致，我们创建一个类似 legacy API 的结果对象
+        #     from collections import namedtuple
+        #     ICPResult = namedtuple('ICPResult', ['transformation', 'fitness', 'inlier_rmse'])
+        #     result_icp = ICPResult(transformation=T_icp, fitness=fitness, inlier_rmse=rmse)
+        # except Exception as e:
+        #     print(f"GPU ICP failed: {e}. Falling back to CPU.")
+        #     result_icp = refine_icp(src, tgt_cropped, init_trans, voxel_size)
+        #     print("CPU ICP fitness:", result_icp.fitness, "rmse:", result_icp.inlier_rmse)
     else:
         print("refining with ICP...")
         result_icp = refine_icp(src, tgt_cropped, init_trans, voxel_size)
@@ -168,9 +169,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="register_with_prior: src tgt (supports .pcd/.ply/.npy)")
     parser.add_argument("src", help="source 点云 (.pcd/.ply/.npy)")
     parser.add_argument("tgt", help="target 点云 (.pcd/.ply/.npy) 或 已裁剪的 .pcd")
-    parser.add_argument("--voxel", type=float, default=0.02)
+    parser.add_argument("--voxel", type=float, default=0.1)
     parser.add_argument("--crop-expand", type=float, default=1.0)
-    parser.add_argument("--no-global", action="store_true", help="跳过 FPFH+RANSAC，使用质心对齐作为初始变换")
+    parser.add_argument("--no-global", action="store_true", help="跳过FPFH+RANSAC，使用质心对齐作为初始变换")
     parser.add_argument("--skip-crop", action="store_true", help="目标已是裁剪子集，跳过裁剪")
     parser.add_argument("--use-gpu", action="store_true", help="使用 GPU 版本的 ICP 进行精配准")
     args = parser.parse_args()

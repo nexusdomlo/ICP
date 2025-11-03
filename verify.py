@@ -1,14 +1,14 @@
 import numpy as np
 import open3d as o3d
 
-src = o3d.io.read_point_cloud("/home/brian/DCP/Cut/data_2_cut.pcd")
-tgt = o3d.io.read_point_cloud("/home/brian/DCP/Cut/data_2.pcd")
+src = o3d.io.read_point_cloud("C:\\Abandon\\PCD_Data\\data_2_cut.pcd")
+tgt = o3d.io.read_point_cloud("C:\\Abandon\\PCD_Data\\data_2_cut_transformed.pcd")
 
 # 把这里的 T 替换为脚本输出的矩阵
-T = np.array([[ 1.00000000e+00,  2.78388423e-14, -1.21569421e-14,  1.84297022e-14],
-              [-2.78388423e-14,  1.00000000e+00,  1.95399252e-14, -5.43662337e-14],
-              [ 1.22957200e-14, -1.95121697e-14,  1.00000000e+00,  1.06581410e-14],
-              [ 0.0, 0.0, 0.0, 1.0]])
+T = np.array([[ 1.00000000e+00,  1.00751683e-16,  9.36002697e-17, -2.85687673e-17],
+               [ 5.20209367e-17, -5.96933695e-17,  1.00000000e+00, -1.63241769e-16],
+               [ 8.62027715e-18, -1.00000000e+00,  9.87865859e-17, -2.81162291e-16],
+               [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
 
 src.transform(T)
 
