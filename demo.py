@@ -1,7 +1,7 @@
-# ...existing code...
 import open3d as o3d
 import numpy as np
 from open3d import core as o3c
+import argparse, os
 # import open3d.t.pipelines.registration as treg
 
 
@@ -141,7 +141,7 @@ def register_with_prior(src_path, tgt_path, voxel_size=0.02, crop_expand=1.5, do
         T[:3, 3] = tgt_center - src_center
         init_trans = T
 
-    # 精配准（ICP）
+    # 精配准（ICP）GPU版本，但是GPU版暂时不可用，open3d编译不出来，我们不要再去管这个问题了
     if use_gpu:
         print("\nrefining with ICP on GPU... sorry ICP GPU 版暂时不可用，正在使用 CPU 版代替\n")
         # try:
@@ -165,7 +165,6 @@ def register_with_prior(src_path, tgt_path, voxel_size=0.02, crop_expand=1.5, do
 # 示例：先下采样（可选），然后用已知小点云位置做配准
 # ...existing code...
 if __name__ == "__main__":
-    import argparse, os
     parser = argparse.ArgumentParser(description="register_with_prior: src tgt (supports .pcd/.ply/.npy)")
     parser.add_argument("src", help="source 点云 (.pcd/.ply/.npy)")
     parser.add_argument("tgt", help="target 点云 (.pcd/.ply/.npy) 或 已裁剪的 .pcd")
