@@ -2,6 +2,62 @@
 一个普通的ICP算法，但是由于我的设备时jetson agx orin Ubuntu22.04版本，CPU远远弱于GPU，所以将ICP算法做了GPU加速
 要实现GPU加速就要去自己编译C++库,但是编译一堆问题，所以用回CPU吧
 
+## 简单来说，`voxel_size` 主要有三大作用：
+同时对两个点云进行降低采样
+```
+`voxel_size`（体素大小）是一个**极其关键的核心参数**。它不仅仅是一个简单的数值，而是**定义了整个配准流程工作尺度（Scale）的基准**。
+### 1. 控制点云的密度（体素下采样）
+
+这是 `voxel_size` 最直接的功能。代码中的 `pcd.voxel_down_sample(voxel_size)` 会执行以下操作：
+*   它会在你的点云空间中创建一个三维网格，每个小立方体（就是“体素”，Voxel）的边长就是你设定的 `voxel_size`。
+*   然后，它会把落入同一个小立方体内的所有点，用这些点的**平均值（质心）**来代替。
+*   **效果**：原始点云可能有几百万甚至上千万个点，非常密集。经过下采样后，点云数量会大幅减少，同时保留了物体的基本形状。
+
+**为什么这么做？**
+*   **提速**：后续的特征计算和匹配过程在点数减少后会快几个数量级。
+*   **消除冗余**：原始点云中很多点是冗余的，下采样可以去除这些冗余，让点云分布更均匀。
+
+**如何选择？**
+*   `voxel_size` 越大，下采样后剩下的点越少，处理越快，但丢失的细节也越多。
+*   `voxel_size` 越小，保留的细节越多，但计算也越慢。
+
+![Voxel Downsampling](https://www.open3d.org/docs/0.9.0/_images/voxel_down_sample.png)
+*(上图：左边是原始点云，右边是体素下采样后的点云)*
+
+### 2. 定义特征计算的邻域范围
+
+在你的代码中，`voxel_size` 被用来推导计算法线和FPFH特征时的**搜索半径**：
+
+*   **计算法线**: `radius=voxel_size*2`
+    *   为了计算某一个点的法线方向，算法需要看它周围的邻近点。这个半径定义了“邻近”是多大范围。
+*   **计算FPFH特征**: `radius=voxel_size*5`
+    *   FPFH特征描述了一个点的局部几何形状。同样，这个半径定义了“局部”是多大范围。
+
+这个半径非常重要，因为它决定了算法的“视野”。一个合适的半径能让算法捕捉到有意义的几何结构（比如墙角、边缘），从而生成有区分度的特征，为后续的正确匹配打下基础。
+
+### 3. 设定匹配过程中的距离阈值
+
+`voxel_size` 还被用来设定后续配准步骤中的**距离阈值**：
+
+*   **全局配准 (RANSAC)**: `distance_threshold = voxel_size * 1.5`
+    *   在RANSAC寻找最佳初始变换时，它会认为两对特征点如果距离小于这个阈值，才可能是一对正确的匹配。
+*   **精配准 (ICP)**: `distance_threshold = voxel_size * 0.4`
+    *   在ICP迭代过程中，它只考虑源点云和目标点云中距离小于这个阈值的点对。这可以有效排除错误的、距离很远的点对的干扰。
+
+### 总结与如何调整
+
+`voxel_size` 是整个流程的“纲”，它纲举目张地影响了**点云密度、特征尺度、匹配容差**这三个核心环节。你可以把它理解为算法处理点云的“分辨率”。
+
+**如何选择一个合适的 `voxel_size`？**
+
+1.  **观察你的数据**：加载你的点云，目测一下点云的单位是什么（米、厘米？）。然后估算一下你关心的物体表面上，点与点之间的大致距离。
+2.  **设定初始值**：一个经验法则是，`voxel_size` 可以设为你估算的平均点间距的 **5到10倍**。例如，如果你的点云单位是米，点间距大约是2厘米（0.02米），那么你可以从 `voxel_size = 0.1` 开始尝试。
+3.  **实验和调整**：
+    *   如果配准很慢，或者结果很差（因为太多细节和噪声），尝试**增大** `voxel_size`。
+    *   如果配准后发现很多几何细节都丢失了，导致对不齐，尝试**减小** `voxel_size`。
+
+调整 `voxel_size` 是使用这个脚本时最重要的调参工作，你需要通过实验来找到一个在速度和精度之间达到最佳平衡的数值。
+```
 ## 运行
 ```
 python demo.py "C:\Abandon\PCD_Data\data\data_2_cut.pcd" "C:\Abandon\PCD_Data\data\data_2_cut_transformed.pcd" --skip-crop
@@ -56,7 +112,7 @@ final transformation:
 ![alt text](image.png)
 
 
-#### 使用命令对大点云和小点云（5m高度）进行一个配准
+#### 使用命令对大点云dixingcaiji和小点云（5m高度）进行一个配准
 ```
 python demo.py "C:\Abandon\PCD_Data\1117pcd\5m-30mlaihui.pcd" "C:\Abandon\PCD_Data\1117pcd\dixingcaiji.pcd" --voxel 0.2 --skip-crop
 ```
@@ -111,6 +167,8 @@ final transformation:
 
 ```
 python demo.py "C:\Abandon\PCD_Data\1117pcd\2m-30mlaihui4.pcd" "C:\Abandon\PCD_Data\1117pcd\2m-30mlaihui5.pcd" --voxel 0.2 --skip-crop
+```
+```
 cropped target count: 2261440
 running global registration (FPFH + RANSAC)...
 global init_trans:
@@ -135,6 +193,8 @@ final transformation:
 
 ```
 python demo.py "C:\Abandon\PCD_Data\1117pcd\2mlaihui1.pcd" "C:\Abandon\PCD_Data\1117pcd\2mlaihui.pcd" --voxel 0.3 --skip-crop
+```
+```
 cropped target count: 2231927
 running global registration (FPFH + RANSAC)...
 global init_trans:
@@ -177,3 +237,52 @@ final transformation:
  [ 0.          0.          0.          1.        ]]
 
 ```
+#### 现在可能又没有问题了
+
+
+#### 对2mqujiang和2mqiluo进行一个配准
+```
+python demo.py "C:\Abandon\PCD_Data\1117pcd\2mqujiang.pcd" "C:\Abandon\PCD_Data\1117pcd\2mqiluo.pcd" --voxel 0.5 --skip-crop
+o.pcd" --voxel 0.5 --skip-crop
+```
+```
+cropped target count: 130350
+running global registration (FPFH + RANSAC)...
+global init_trans:
+ [[-0.97642246  0.21327125 -0.03338483 -1.02181111]
+ [ 0.19525289  0.93850383  0.28475758  1.33240991]
+ [ 0.0920624   0.27152521 -0.95801804 20.49912267]
+ [ 0.          0.          0.          1.        ]]
+global fitness: 0.5379310344827586 inlier_rmse: 0.4341429802890211
+refining with ICP...
+ICP fitness: 0.6642663043478261 rmse: 0.08987535376589262
+final transformation:
+ [[-9.95828996e-01  8.97310582e-02 -1.65211187e-02 -2.66405942e+00]
+ [ 8.58071787e-02  9.82605217e-01  1.64694007e-01  7.79441539e-01]
+ [ 3.10119050e-02  1.62589438e-01 -9.86206336e-01  1.89799409e+01]
+ [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]
+```
+![alt text](image-5.png)
+
+#### 对2m-30mlaihui1和5m-30mlaihui1进行一个配准(2m和5m之间不存在非刚体变换)
+```
+python demo.py "C:\Abandon\PCD_Data\1117pcd\2m-30mlaihui1.pcd" "C:\Abandon\PCD_Data\1117pcd\5m-30mlaihui1.pcd" --voxel 0.3 --skip-crop
+```
+```                                           
+cropped target count: 4471400
+running global registration (FPFH + RANSAC)...
+global init_trans:
+ [[ 0.99781289 -0.01136706 -0.06511697  0.83714632]
+ [ 0.0131186   0.99956182  0.02653436  0.31852459]
+ [ 0.06478682 -0.02733057  0.99752479  0.31015154]
+ [ 0.          0.          0.          1.        ]]
+global fitness: 0.9823126520986477 inlier_rmse: 0.157140193856258
+refining with ICP...
+ICP fitness: 0.9879963171218624 rmse: 0.029808478372007414
+final transformation:
+ [[ 0.99778984 -0.01140394 -0.06546289  0.79541045]
+ [ 0.01334926  0.99947987  0.02935637  0.18184143]
+ [ 0.06509406 -0.03016537  0.99742309  0.31319559]
+ [ 0.          0.          0.          1.        ]]
+```
+![alt text](image-6.png)
