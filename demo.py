@@ -174,7 +174,6 @@ if __name__ == "__main__":
     parser.add_argument("--skip-crop", action="store_true", help="目标已是裁剪子集，跳过裁剪")
     parser.add_argument("--use-gpu", action="store_true", help="使用 GPU 版本的 ICP 进行精配准")
     args = parser.parse_args()
-
     do_global = not args.no_global
     T, tgt_cropped, src = register_with_prior(args.src, args.tgt,
                                               voxel_size=args.voxel,
@@ -183,6 +182,15 @@ if __name__ == "__main__":
                                               skip_crop=args.skip_crop,
                                               use_gpu=args.use_gpu)
     print("final transformation:\n", T)
+
+
     # 可选可视化
     src_tmp = src.transform(T)
+    print("::正在合并点云....")
+    merged_cloud = src_tmp + tgt_cropped
     o3d.visualization.draw_geometries([src_tmp.paint_uniform_color([1,0,0]), tgt_cropped.paint_uniform_color([0,1,0])])
+    o3d.visualization.draw_geometries([merged_cloud.paint_uniform_color([0,0,1])], window_name="合并后的点云")
+    # 保存路径
+    save_path = "C:\\Abandon\\PCD_Data\\1117pcd\\merge\\merged_result.ply"
+    # 保存合并后的点云
+    o3d.io.write_point_cloud(save_path, merged_cloud)

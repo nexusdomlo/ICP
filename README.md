@@ -75,9 +75,30 @@ python demo.py "C:\Abandon\PCD_Data\data\data_2_cut.pcd" "C:\Abandon\PCD_Data\da
 python testCuda.py
 ```
 
-## 检验open3d是否能够使用GPU资源
+# 有可能需要知道mid360到底是以什么为单位的
+## 计算点云中点之间的平均距离（解决经度问题）
 ```
-python verify_gpu.py
+python computePoint.py "C:\Abandon\PCD_Data\1117pcd\5m-30mlaihui.pcd"
+```
+### 结果
+```    
+成功加载点云: C:\Abandon\PCD_Data\1117pcd\5m-30mlaihui.pcd
+========================================
+点云的平均点间距是: 0.021681
+========================================
+建议:
+这是一个很好的 `voxel_size` 的初始参考值。
+你可以从 voxel_size = 0.0217 开始尝试，
+或者设为它的几倍，例如 0.1084 或 0.2168，
+然后根据配准效果和速度进行调整。
+
+基于AI生成的答案
+对于几乎所有来自真实世界激光雷达（LiDAR）的 SLAM 算法（如 Fast-LIO, LOAM, LeGO-LOAM 等），它们在 ROS (Robot Operating System) 框架下处理和输出的点云，**默认的单位都是米 (meters)**。
+这是 ROS 系统中一个广泛遵守的约定（REP-103: Standard Units of Measure and Coordinate Conventions），以确保不同传感器和算法之间的数据可以无缝交互。
+所以，你可以非常确定：
+**你的点云数据单位是米 (m)。**
+因此，你计算出的平均点间距 `0.021681` 的单位就是**米**，约等于 2.17 厘米。
+这个尺度对于 Livox Mid-360 这样的激光雷达在室内或近距离室外环境扫描是完全合理的。
 ```
 
 ## 检验结果
