@@ -70,11 +70,13 @@ def global_registration(src_down, tgt_down, src_fpfh, tgt_fpfh, voxel_size):
 
 def refine_icp(src, tgt, init_trans, voxel_size):
     distance_threshold = voxel_size * 0.4
-    src.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*2, max_nn=30))
+    # 确定领域，同时计算法向量
+    src.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*2, max_nn=30)) # 可能能够用于之后的鲁棒对应关系检查中
     tgt.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*2, max_nn=30))
     result = o3d.pipelines.registration.registration_icp(
         src, tgt, distance_threshold, init_trans,
-        o3d.pipelines.registration.TransformationEstimationPointToPlane())
+        o3d.pipelines.registration.TransformationEstimationPointToPlane() # 点到面点云配准
+        )
     return result
 
 # def refine_icp_gpu(src, tgt, init_trans, voxel_size):
@@ -130,7 +132,7 @@ def register_with_prior(src_path, tgt_path, voxel_size=0.02, crop_expand=1.5, do
     if src_down is None or tgt_down is None:
         raise RuntimeError("下采样导致点云为空，请减小 voxel_size")
 
-    # 全局配准（可选）或质心对齐作为初始变换
+    # 全局配准（可选）或质心对齐作为初始变换，通过FPFH+RANSAC求解初始变换
     if do_global:
         print("running global registration (FPFH + RANSAC)...")
         glob = global_registration(src_down, tgt_down, src_fpfh, tgt_fpfh, voxel_size)
@@ -160,14 +162,14 @@ def register_with_prior(src_path, tgt_path, voxel_size=0.02, crop_expand=1.5, do
         #     result_icp = refine_icp(src, tgt_cropped, init_trans, voxel_size)
         #     print("CPU ICP fitness:", result_icp.fitness, "rmse:", result_icp.inlier_rmse)
     else:
+        #使用CPU进行精配准
         print("refining with ICP...")
         result_icp = refine_icp(src, tgt_cropped, init_trans, voxel_size)
         print("ICP fitness:", result_icp.fitness, "rmse:", result_icp.inlier_rmse)
 
     return result_icp.transformation, tgt_cropped, src
-# ...existing code...
+
 # 示例：先下采样（可选），然后用已知小点云位置做配准
-# ...existing code...
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="register_with_prior: src tgt (supports .pcd/.ply/.npy)")
     parser.add_argument("src", help="source 点云 (.pcd/.ply/.npy)")
