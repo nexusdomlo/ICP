@@ -1,63 +1,42 @@
 # ICP: A method for registration of 3-D shapes
 一个普通的ICP算法，但是由于我的设备时jetson agx orin Ubuntu22.04版本，CPU远远弱于GPU，所以将ICP算法做了GPU加速
 要实现GPU加速就要去自己编译C++库,但是编译一堆问题，所以用回CPU吧
-
-## 简单来说，`voxel_size` 主要有三大作用：
+## voxel参数
+简单来说，voxel_size主要有三大作用：
 同时对两个点云进行降低采样
-```
-`voxel_size`（体素大小）是一个**极其关键的核心参数**。它不仅仅是一个简单的数值，而是**定义了整个配准流程工作尺度（Scale）的基准**。
-### 1. 控制点云的密度（体素下采样）
+voxel_size（体素大小）是一个极其关键的核心参数。它不仅仅是一个简单的数值，而是定义了整个配准流程工作尺度（Scale）的基准。
+1. 控制点云的密度（体素下采样）
+这是 voxel_size 最直接的功能。代码中的 pcd.voxel_down_sample(voxel_size)会执行以下操作：
+   它会在你的点云空间中创建一个三维网格，每个小立方体（就是“体素”，Voxel）的边长就是你设定的 voxel_size。
+   然后，它会把落入同一个小立方体内的所有点，用这些点的平均值（质心）来代替。
+   效果：原始点云可能有几百万甚至上千万个点，非常密集。经过下采样后，点云数量会大幅减少，同时保留了物体的基本形状。
 
-这是 `voxel_size` 最直接的功能。代码中的 `pcd.voxel_down_sample(voxel_size)` 会执行以下操作：
-*   它会在你的点云空间中创建一个三维网格，每个小立方体（就是“体素”，Voxel）的边长就是你设定的 `voxel_size`。
-*   然后，它会把落入同一个小立方体内的所有点，用这些点的**平均值（质心）**来代替。
-*   **效果**：原始点云可能有几百万甚至上千万个点，非常密集。经过下采样后，点云数量会大幅减少，同时保留了物体的基本形状。
+为什么这么做？
+   提速：后续的特征计算和匹配过程在点数减少后会快几个数量级。
+   消除冗余：原始点云中很多点是冗余的，下采样可以去除这些冗余，让点云分布更均匀。
 
-**为什么这么做？**
-*   **提速**：后续的特征计算和匹配过程在点数减少后会快几个数量级。
-*   **消除冗余**：原始点云中很多点是冗余的，下采样可以去除这些冗余，让点云分布更均匀。
+如何选择？
+   voxel_size越大，下采样后剩下的点越少，处理越快，但丢失的细节也越多。
+   voxel_size越小，保留的细节越多，但计算也越慢。
 
-**如何选择？**
-*   `voxel_size` 越大，下采样后剩下的点越少，处理越快，但丢失的细节也越多。
-*   `voxel_size` 越小，保留的细节越多，但计算也越慢。
-
-![Voxel Downsampling](https://www.open3d.org/docs/0.9.0/_images/voxel_down_sample.png)
-*(上图：左边是原始点云，右边是体素下采样后的点云)*
-
-### 2. 定义特征计算的邻域范围
-
-在你的代码中，`voxel_size` 被用来推导计算法线和FPFH特征时的**搜索半径**：
-
-*   **计算法线**: `radius=voxel_size*2`
-    *   为了计算某一个点的法线方向，算法需要看它周围的邻近点。这个半径定义了“邻近”是多大范围。
-*   **计算FPFH特征**: `radius=voxel_size*5`
-    *   FPFH特征描述了一个点的局部几何形状。同样，这个半径定义了“局部”是多大范围。
+2. 定义特征计算的邻域范围
+voxel_size被用来推导计算法线和FPFH特征时的搜索半径：
+①	为了计算某一个点的法线方向，算法需要看它周围的邻近点。这个半径定义了“邻近”是多大范围。
+②	计算FPFH特征: radius=voxel_size*5
+③	FPFH特征描述了一个点的局部几何形状。同样，这个半径定义了“局部”是多大范围。
 
 这个半径非常重要，因为它决定了算法的“视野”。一个合适的半径能让算法捕捉到有意义的几何结构（比如墙角、边缘），从而生成有区分度的特征，为后续的正确匹配打下基础。
 
-### 3. 设定匹配过程中的距离阈值
+3. 设定匹配过程中的距离阈值
+voxel_size还被用来设定后续配准步骤中的距离阈值：
+在全局配准 (RANSAC): distance_threshold = voxel_size * 1.5`
+在RANSAC寻找最佳初始变换时，它会认为两对特征点如果距离小于这个阈值，才可能是一对正确的匹配。
+精配准 (ICP): distance_threshold = voxel_size * 0.4
+在ICP迭代过程中，它只考虑源点云和目标点云中距离小于这个阈值的点对。这可以有效排除错误的、距离很远的点对的干扰。
 
-`voxel_size` 还被用来设定后续配准步骤中的**距离阈值**：
-
-*   **全局配准 (RANSAC)**: `distance_threshold = voxel_size * 1.5`
-    *   在RANSAC寻找最佳初始变换时，它会认为两对特征点如果距离小于这个阈值，才可能是一对正确的匹配。
-*   **精配准 (ICP)**: `distance_threshold = voxel_size * 0.4`
-    *   在ICP迭代过程中，它只考虑源点云和目标点云中距离小于这个阈值的点对。这可以有效排除错误的、距离很远的点对的干扰。
-
-### 总结与如何调整
-
+总结
 `voxel_size` 是整个流程的“纲”，它纲举目张地影响了**点云密度、特征尺度、匹配容差**这三个核心环节。你可以把它理解为算法处理点云的“分辨率”。
 
-**如何选择一个合适的 `voxel_size`？**
-
-1.  **观察你的数据**：加载你的点云，目测一下点云的单位是什么（米、厘米？）。然后估算一下你关心的物体表面上，点与点之间的大致距离。
-2.  **设定初始值**：一个经验法则是，`voxel_size` 可以设为你估算的平均点间距的 **5到10倍**。例如，如果你的点云单位是米，点间距大约是2厘米（0.02米），那么你可以从 `voxel_size = 0.1` 开始尝试。
-3.  **实验和调整**：
-    *   如果配准很慢，或者结果很差（因为太多细节和噪声），尝试**增大** `voxel_size`。
-    *   如果配准后发现很多几何细节都丢失了，导致对不齐，尝试**减小** `voxel_size`。
-
-调整 `voxel_size` 是使用这个脚本时最重要的调参工作，你需要通过实验来找到一个在速度和精度之间达到最佳平衡的数值。
-```
 ## 运行
 ```
 python demo.py "C:\Abandon\PCD_Data\data\data_2_cut.pcd" "C:\Abandon\PCD_Data\data\data_2_cut_transformed.pcd" --skip-crop
@@ -76,7 +55,15 @@ python testCuda.py
 ```
 
 # 有可能需要知道mid360到底是以什么为单位的
-## 计算点云中点之间的平均距离（解决经度问题）
+基于AI生成的答案
+对于几乎所有来自真实世界激光雷达（LiDAR）的 SLAM 算法（如 Fast-LIO, LOAM, LeGO-LOAM 等），它们在 ROS (Robot Operating System) 框架下处理和输出的点云，**默认的单位都是米 (meters)**。
+这是 ROS 系统中一个广泛遵守的约定（REP-103: Standard Units of Measure and Coordinate Conventions），以确保不同传感器和算法之间的数据可以无缝交互。
+所以，你可以非常确定：
+**你的点云数据单位是米 (m)。**
+因此，你计算出的平均点间距 `0.021681` 的单位就是**米**，约等于 2.17 厘米。
+这个尺度对于 Livox Mid-360 这样的激光雷达在室内或近距离室外环境扫描是完全合理的。
+
+## 计算点云中点之间的平均距离（解决精度问题）
 ```
 python computePoint.py "C:\Abandon\PCD_Data\1117pcd\5m-30mlaihui.pcd"
 ```
@@ -91,14 +78,6 @@ python computePoint.py "C:\Abandon\PCD_Data\1117pcd\5m-30mlaihui.pcd"
 你可以从 voxel_size = 0.0217 开始尝试，
 或者设为它的几倍，例如 0.1084 或 0.2168，
 然后根据配准效果和速度进行调整。
-
-基于AI生成的答案
-对于几乎所有来自真实世界激光雷达（LiDAR）的 SLAM 算法（如 Fast-LIO, LOAM, LeGO-LOAM 等），它们在 ROS (Robot Operating System) 框架下处理和输出的点云，**默认的单位都是米 (meters)**。
-这是 ROS 系统中一个广泛遵守的约定（REP-103: Standard Units of Measure and Coordinate Conventions），以确保不同传感器和算法之间的数据可以无缝交互。
-所以，你可以非常确定：
-**你的点云数据单位是米 (m)。**
-因此，你计算出的平均点间距 `0.021681` 的单位就是**米**，约等于 2.17 厘米。
-这个尺度对于 Livox Mid-360 这样的激光雷达在室内或近距离室外环境扫描是完全合理的。
 ```
 
 ## 检验结果
@@ -162,6 +141,8 @@ final transformation:
 #### 使用命令（这里面2m-30mlaihui1这个数据是大数据，而目标这个是小数据，要使用大去对小，这样子才能得出图中的结果，小去对大可能很容易进入局部最优导致匹配错误）
 ```
 python demo.py "C:\Abandon\PCD_Data\1117pcd\2m-30mlaihui1.pcd" "C:\Abandon\PCD_Data\1117pcd\2m-30mlaihui.pcd" --voxel 0.2 --skip-crop
+```
+```
 cropped target count: 18627
 running global registration (FPFH + RANSAC)...
 [Open3D WARNING] Too few correspondences (2173) after mutual filter, fall back to original correspondences.
@@ -263,8 +244,7 @@ final transformation:
 
 #### 对2mqujiang和2mqiluo进行一个配准
 ```
-python demo.py "C:\Abandon\PCD_Data\1117pcd\2mqujiang.pcd" "C:\Abandon\PCD_Data\1117pcd\2mqiluo.pcd" --voxel 0.5 --skip-crop
-o.pcd" --voxel 0.5 --skip-crop
+python demo.py "C:\Abandon\PCD_Data\1117pcd\2mqujiang.pcd" "C:\Abandon\PCD_Data\1117pcd\2mqiluo.pcd" --voxel 0.5
 ```
 ```
 cropped target count: 130350

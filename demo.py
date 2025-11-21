@@ -1,7 +1,8 @@
 import open3d as o3d
 import numpy as np
 from open3d import core as o3c
-import argparse, os
+import argparse
+from pathlib import Path
 # import open3d.t.pipelines.registration as treg
 
 
@@ -43,10 +44,13 @@ def crop_target_by_source(src, tgt, expand=1.2):
     return tgt.crop(crop_box)
 
 def preprocess(pcd, voxel_size):
+    # pcd特有的降采样操作，通过voxel_size进行降采样
     pcd_down = pcd.voxel_down_sample(voxel_size)
     if len(pcd_down.points) == 0:
         return None, None
+    # 计算FPFH特征，首先先估计一个点的法向量
     pcd_down.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*2, max_nn=30))
+    # 求出 FPFH 特征
     fpfh = o3d.pipelines.registration.compute_fpfh_feature(
         pcd_down,
         o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size*5, max_nn=100))
@@ -173,6 +177,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-global", action="store_true", help="跳过FPFH+RANSAC，使用质心对齐作为初始变换")
     parser.add_argument("--skip-crop", action="store_true", help="目标已是裁剪子集，跳过裁剪")
     parser.add_argument("--use-gpu", action="store_true", help="使用 GPU 版本的 ICP 进行精配准")
+    parser.add_argument("--save", action="store_true", help="是否需要保存呢")
     args = parser.parse_args()
     do_global = not args.no_global
     T, tgt_cropped, src = register_with_prior(args.src, args.tgt,
@@ -183,14 +188,17 @@ if __name__ == "__main__":
                                               use_gpu=args.use_gpu)
     print("final transformation:\n", T)
 
-
     # 可选可视化
     src_tmp = src.transform(T)
-    print("::正在合并点云....")
-    merged_cloud = src_tmp + tgt_cropped
     o3d.visualization.draw_geometries([src_tmp.paint_uniform_color([1,0,0]), tgt_cropped.paint_uniform_color([0,1,0])])
-    o3d.visualization.draw_geometries([merged_cloud.paint_uniform_color([0,0,1])], window_name="合并后的点云")
-    # 保存路径
-    save_path = "C:\\Abandon\\PCD_Data\\1117pcd\\merge\\merged_result.ply"
-    # 保存合并后的点云
-    o3d.io.write_point_cloud(save_path, merged_cloud)
+    # 保存合并后的点云或者展示一下合并后的点云如何
+    if(args.save):
+        print("正在合并点云....")
+        file_list = [args.src, args.tgt]
+        names = [Path(f).stem for f in file_list]
+        result = '_'.join(names)
+        print("保存文件名为:", result)
+        # 保存路径
+        save_path = f"C:\\Abandon\\PCD_Data\\1117pcd\\merge\\{result}.ply"
+        merged_cloud = src_tmp + tgt_cropped
+        o3d.io.write_point_cloud(save_path, merged_cloud)
